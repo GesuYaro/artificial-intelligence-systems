@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 
 positive_grades = [4, 5, 6, 7]
 negative_grades = [0, 1, 2, 3]
-
+threshold = 0.5
 
 def info(data):
     sum = 0
@@ -50,14 +50,16 @@ def separate_data(data, attr_name):
     return data.groupby(attr_name)
 
 
-def biggest_class(data):
+def prob_class(data):
     max_count = 0
     max_class = 0
+    size = len(data.index)
     for clazz, count in data['GRADE'].value_counts().items():
         if count > max_count:
             max_count = count
             max_class = clazz
-    return max_class
+    prob = float(max_count) / float(size)
+    return max_class, prob
 
 
 def find_max_attr(data, attributes):
@@ -74,14 +76,16 @@ def find_max_attr(data, attributes):
 class Des_Tree:
     attribute: str
     children: dict#[str, 'Des_Tree']
-    biggest_class: int
+    predicted_class: int
+    prob_class: float
 
-    def __init__(self, attribute=None, children=None, biggest_class=None):
+    def __init__(self, attribute=None, children=None, predicted_class=None, prob_class=None):
         if children is None:
             children = dict()
         self.attribute = attribute
         self.children = children
-        self.biggest_class = biggest_class
+        self.prob_class = prob_class
+        self.predicted_class = predicted_class
 
 
 def make_tree(data, attributes):
@@ -91,7 +95,8 @@ def make_tree(data, attributes):
     else:
         max_attr = attributes[0]
     separated_data = separate_data(data, max_attr)
-    curr = Des_Tree(attribute=max_attr, biggest_class=biggest_class(data))  # сюда разные значения
+    pred, prob = prob_class(data)
+    curr = Des_Tree(attribute=max_attr, predicted_class=pred, prob_class=prob)  # сюда разные значения
     if len(attributes) > 1:
         for i in separated_data.groups.keys():
             new_attrs = attributes.copy()
@@ -100,14 +105,14 @@ def make_tree(data, attributes):
     return curr
 
 
-def classify(row, tree: Des_Tree) -> int:
+def classify(row, tree: Des_Tree) -> tuple:
     while tree.children:
         attr = tree.attribute
         val = row[attr]
         if val not in tree.children:
             break
         tree = tree.children[val]
-    return tree.biggest_class
+    return tree.predicted_class, tree.prob_class
 
 
 def draw_plt(y_true, y_score):
@@ -147,13 +152,15 @@ fn = 0
 fp = 0
 predict = []
 expect = []
+probs = []
 for index, row in test.iterrows():
     real = row["GRADE"]
-    predicted = classify(row, tree)
+    predicted_class, prob = classify(row, tree)
     spaces_count = len(str(index))
-    predict.append(predicted)
+    predict.append(predicted_class)
     expect.append(real)
-    if real == predicted:
+    probs.append(prob)
+    if real == predicted_class:
         if real:
             tp += 1
         else:
@@ -163,7 +170,7 @@ for index, row in test.iterrows():
             fn += 1
         else:
             fp += 1
-    print(f'{index}{" " * (3 - spaces_count)} : {real} : {predicted} : {real == predicted}')
+    print(f'{index}{" " * (3 - spaces_count)} : {real} : {predicted_class} : {"%.3f" % prob} : {real == predicted_class}')
 
 accuracy = (tp + tn) / size
 precision = tp / (tp + fp)
@@ -172,5 +179,7 @@ recall = tp / (tp + fn)
 print(f'accuracy = {accuracy}')
 print(f'precision = {precision}')
 print(f'recall = {recall}')
-
-draw_plt(predict, expect)
+for i in range(len(probs)):
+    if predict[i] == 0:
+        probs[i] = 1 - probs[i]
+draw_plt(expect, probs)
